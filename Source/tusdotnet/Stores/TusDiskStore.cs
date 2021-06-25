@@ -353,54 +353,29 @@ namespace tusdotnet.Stores
         /// <inheritdoc />
         public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken _)
         {
-            var expiredFiles = new List<string>();
-            foreach (var file in Directory.EnumerateFiles(_directoryPath, "*.expiration"))
-            {
-                var f = await InternalFileId.Parse(_fileIdProvider, Path.GetFileNameWithoutExtension(file));
-                if (FileHasExpired(f) && FileIsIncomplete(f))
-                {
-                    expiredFiles.Add(f);
-                }
-            }
-
-            return expiredFiles;
-
-            bool FileHasExpired(InternalFileId fileId)
-            {
-                var firstLine = _fileRepFactory.Expiration(fileId).ReadFirstLine();
-                return !string.IsNullOrWhiteSpace(firstLine)
-                       && DateTimeOffset.ParseExact(firstLine, "O", null).HasPassed();
-            }
-
-            bool FileIsIncomplete(InternalFileId fileId)
-            {
-                var uploadLength = _fileRepFactory.UploadLength(fileId).ReadFirstLineAsLong(fileIsOptional: true, defaultValue: long.MinValue);
-
-                if (uploadLength == long.MinValue)
-                {
-                    return true;
-                }
-
-                var dataFile = _fileRepFactory.Data(fileId);
-
-                if (!dataFile.Exist())
-                {
-                    return true;
-                }
-
-                return uploadLength != dataFile.GetLength();
-            }
+            var files = await GetAllExpiredFiles(_);
+            return files.Where(f => FileIsIncomplete(f)).Select(f => f.ToString());
         }
 
         /// <inheritdoc />
         public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
         {
             var expiredFiles = await GetExpiredFilesAsync(cancellationToken);
-            var deleteFileTasks = expiredFiles.Select(file => DeleteFileAsync(file, cancellationToken)).ToList();
+            return await RemoveFiles(expiredFiles, cancellationToken);
+        }
 
-            await Task.WhenAll(deleteFileTasks);
+        /// <inheritdoc />
+        public async Task<IEnumerable<string>> GetCompletedExpiredFilesAsync(CancellationToken _)
+        {
+            var files = await GetAllExpiredFiles(_);
+            return files.Where(f => !FileIsIncomplete(f)).Select(f => f.ToString());
+        }
 
-            return deleteFileTasks.Count;
+        /// <inheritdoc />
+        public async Task<int> RemoveCompletedExpiredFilesAsync(CancellationToken cancellationToken)
+        {
+            var expiredFiles = await GetCompletedExpiredFilesAsync(cancellationToken);
+            return await RemoveFiles(expiredFiles, cancellationToken);
         }
 
         /// <inheritdoc />
@@ -423,10 +398,62 @@ namespace tusdotnet.Stores
             chunkComplete.Write("1");
         }
 
+        private async Task<IEnumerable<InternalFileId>> GetAllExpiredFiles(CancellationToken cancellationToken)
+        {
+            var expiredFiles = new List<InternalFileId>();
+            foreach (var file in Directory.EnumerateFiles(_directoryPath, "*.expiration"))
+            {
+                var f = await InternalFileId.Parse(_fileIdProvider, Path.GetFileNameWithoutExtension(file));
+                if (FileHasExpired(f))
+                {
+                    expiredFiles.Add(f);
+                }
+            }
+
+            return expiredFiles;
+        }
+
+        private async Task<int> RemoveFiles(IEnumerable<string> fileIds, CancellationToken _)
+        {
+            var deleteFileTasks = fileIds.Select(file => DeleteFileAsync(file, _)).ToList();
+
+            await Task.WhenAll(deleteFileTasks);
+
+            return deleteFileTasks.Count;
+        }
+
+        private bool FileHasExpired(InternalFileId fileId)
+        {
+            var firstLine = _fileRepFactory.Expiration(fileId).ReadFirstLine();
+            return !string.IsNullOrWhiteSpace(firstLine)
+                   && DateTimeOffset.ParseExact(firstLine, "O", null).HasPassed();
+        }
+
+        private bool FileIsIncomplete(InternalFileId fileId)
+        {
+            var uploadLength = _fileRepFactory.UploadLength(fileId).ReadFirstLineAsLong(fileIsOptional: true, defaultValue: long.MinValue);
+
+            if (uploadLength == long.MinValue)
+            {
+                return true;
+            }
+
+            var dataFile = _fileRepFactory.Data(fileId);
+
+            if (!dataFile.Exist())
+            {
+                return true;
+            }
+
+            return uploadLength != dataFile.GetLength();
+        }
+
         private static async Task FlushFileToDisk(byte[] fileWriteBuffer, FileStream fileStream, int writeBufferNextFreeIndex)
         {
             await fileStream.WriteAsync(fileWriteBuffer, 0, writeBufferNextFreeIndex);
             await fileStream.FlushAsync();
         }
+
+
     }
 }

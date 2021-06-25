@@ -45,5 +45,20 @@ namespace tusdotnet.Interfaces
         /// <param name="cancellationToken">Cancellation token to use when cancelling</param>
         /// <returns>The number of files that were removed</returns>
         Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Returns a list of ids of complete files that have expired.
+        /// This method can be used to do batch processing of complete, expired files before removing them.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token to use when cancelling</param>
+        /// <returns>A list of ids of incomplete files that have expired</returns>
+        Task<IEnumerable<string>> GetCompletedExpiredFilesAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Remove all complete files that have expired.
+        /// </summary>
+        /// <param name="cancellationToken">Cancellation token to use when cancelling</param>
+        /// <returns>The number of files that were removed</returns>
+        Task<int> RemoveCompletedExpiredFilesAsync(CancellationToken cancellationToken);
     }
 }
